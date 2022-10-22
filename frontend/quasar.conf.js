@@ -3,7 +3,7 @@
  * the ES6 features that are supported by your Node version. https://node.green/
  */
 
-// Configuration for your app
+// Configuration for your app.
 // https://quasar.dev/quasar-cli/quasar-conf-js
 
 /* eslint-env node */
@@ -62,7 +62,7 @@ module.exports = configure(function (ctx) {
       // gzip: true,
       // analyze: true,
 
-      // Options below are automatically set depending on the env, set them if you want to override
+      // Options below are automatically set depending on the env, set them if you want to override.
       // extractCSS: false,
 
       // https://quasar.dev/quasar-cli/handling-webpack
@@ -79,15 +79,15 @@ module.exports = configure(function (ctx) {
         type: 'http'
       },
       port: 8080,
-      open: false // opens browser window automatically
+      open: false // opens browser window automatically.
     },
 
     // https://quasar.dev/quasar-cli/quasar-conf-js#Property%3A-framework
     framework: {
       config: {},
 
-      // iconSet: 'material-icons', // Quasar icon set
-      // lang: 'en-US', // Quasar language pack
+      // iconSet: 'material-icons', // Quasar icon set.
+      // lang: 'en-US', // Quasar language pack.
 
       // For special cases outside of where the auto-import strategy can have an impact
       // (like functional components as one of the examples),
@@ -182,7 +182,7 @@ module.exports = configure(function (ctx) {
 
     // Full list of options: https://quasar.dev/quasar-cli/developing-cordova-apps/configuring-cordova
     cordova: {
-      // noIosLegacyBuildFlag: true, // uncomment only if you know what you are doing
+      // noIosLegacyBuildFlag: true, // uncomment only if you know what you are doing!
     },
 
     // Full list of options: https://quasar.dev/quasar-cli/developing-capacitor-apps/configuring-capacitor
