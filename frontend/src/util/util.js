@@ -1,6 +1,25 @@
 import semver from 'semver'
 import { untar } from '../untar/untar.js'
 import pako from 'pako'
+import _ from 'lodash'
+
+let API_ENDPOINT = process.env.ARCHIVARIUS_API_ENDPOINT
+if (localStorage.getItem('catalogChannel') !== null) {
+  if (localStorage.getItem('catalogChannel') === 'production') {
+    API_ENDPOINT = 'https://catalog.flipperzero.one/api/v0'
+  } else {
+    API_ENDPOINT = 'https://catalog.flipp.dev/api/v0'
+  }
+}
+
+function camelCaseDeep (object) {
+  return Object.fromEntries(Object.entries(object).map(e => {
+    if (!!e[1] && typeof e[1] === 'object') {
+      e[1] = camelCaseDeep(e[1])
+    }
+    return [_.camelCase(e[0]), e[1]]
+  }))
+}
 
 class Operation {
   constructor () {
@@ -110,7 +129,7 @@ async function fetchRegions () {
   return fetch('https://update.flipperzero.one/regions/api/v0/bundle')
     .then((response) => {
       if (response.status >= 400) {
-        throw new Error('Failed to fetch firmware channels (' + response.status + ')')
+        throw new Error('Failed to fetch region (' + response.status + ')')
       }
       return response.json()
     })
@@ -128,10 +147,81 @@ function unpack (buffer) {
   return untar(ungzipped.buffer)
 }
 
+function bytesToSize (bytes) {
+  const sizes = ['Bytes', 'KiB', 'MiB', 'GiB', 'TiB']
+  if (bytes === 0) return 'n/a'
+  const i = parseInt(Math.floor(Math.log(bytes) / Math.log(1024)), 10)
+  if (i === 0) return `${bytes} ${sizes[i]})`
+  return `${(bytes / (1024 ** i)).toFixed(1)}${sizes[i]}`
+}
+
+async function fetchCategories (params) {
+  const res = await fetch(`${API_ENDPOINT}/category?${new URLSearchParams({ ...params }).toString()}`).then(res => res.json())
+  const categories = res.map(category => camelCaseDeep(category))
+  return categories
+}
+
+async function fetchAppsShort (params) {
+  const res = await fetch(`${API_ENDPOINT}/application?${new URLSearchParams({ ...params }).toString()}`).then(res => res.json())
+  const apps = res.map(app => camelCaseDeep(app))
+  return apps
+}
+
+async function fetchAppById (id, params) {
+  if (!params.target) {
+    delete params.target
+  }
+  if (!params.api) {
+    delete params.api
+  }
+  const res = await fetch(`${API_ENDPOINT}/application/${id}?${new URLSearchParams({ ...params }).toString()}`).then(res => res.json())
+  return camelCaseDeep(res)
+}
+
+async function fetchAppFap (params) {
+  const file = await fetch(`${API_ENDPOINT}/application/version/${params.versionId}/build/compatible?${new URLSearchParams({ target: params.target, api: params.api }).toString()}`)
+    .then((res) => {
+      if (res.status >= 400) {
+        throw new Error('Failed to fetch application build (' + res.status + ')')
+      }
+      return res.arrayBuffer()
+    })
+  return file
+}
+
+async function fetchAppsVersions (uids) {
+  let query = ''
+  for (const uid of uids) {
+    query += 'uid=' + uid + '&'
+  }
+  const res = await fetch(`${API_ENDPOINT}/application/versions?${query}`).then(res => res.json())
+  const versions = res.map(version => camelCaseDeep(version))
+  return versions
+}
+
+async function submitAppReport (id, report) {
+  return fetch(`${API_ENDPOINT}/application/${id}/issue`, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(report)
+  })
+}
+
 export {
+  camelCaseDeep,
   Operation,
   fetchChannels,
   fetchFirmware,
   fetchRegions,
-  unpack
+  unpack,
+  bytesToSize,
+  fetchCategories,
+  fetchAppsShort,
+  fetchAppById,
+  fetchAppFap,
+  fetchAppsVersions,
+  submitAppReport
 }

@@ -1,5 +1,5 @@
 <template>
-  <q-page class="column items-center q-pa-md" :class="$q.screen.width > 960 && $q.screen.height > 500 ? 'q-mt-xl' : 'q-mt-xs'">
+  <q-page class="column items-center q-pa-md full-width" :class="$q.screen.width > 960 && $q.screen.height > 500 ? 'q-mt-xl' : 'q-mt-xs'">
     <div
       v-if="!connected || !flags.rpcActive || flags.rpcToggling"
       class="column flex-center q-my-xl"
@@ -80,7 +80,7 @@
           </q-item-section>
 
           <q-item-section avatar>
-            <q-btn flat dense round icon="more_vert">
+            <q-btn v-if="path !== '/'" flat dense round icon="more_vert">
               <q-menu auto-close self="top middle">
                 <q-list style="min-width: 100px">
                   <q-item v-if="item.type === 0" clickable @click="itemClicked(item)">
@@ -107,7 +107,7 @@
                       Rename
                     </q-item-section>
                   </q-item>
-                  <q-item clickable class="text-negative" @click="remove(path + '/' + item.name, !!item.type)">
+                  <q-item clickable class="text-negative" @click="flags.deletePopup = true; itemToDelete = item">
                     <q-item-section avatar>
                       <q-icon name="mdi-delete-outline"/>
                     </q-item-section>
@@ -120,7 +120,7 @@
             </q-btn>
           </q-item-section>
         </q-item>
-        <q-item v-if="dir.length === 0 && path !== '/'">
+        <q-item v-if="dir.length === 0 && path !== '/'" class="text-grey-7">
           <q-item-section avatar class="q-ml-xs">
             <q-icon name="mdi-folder-outline"/>
           </q-item-section>
@@ -162,6 +162,29 @@
               label="Cancel"
               color="negative"
               v-close-popup
+            ></q-btn>
+          </q-card-actions>
+        </q-card>
+      </q-dialog>
+      <q-dialog v-model="flags.deletePopup">
+        <q-card>
+          <q-card-section>
+            <div class="text-subtitle1">Are you sure you want to delete <b>{{ itemToDelete.name }}</b>?</div>
+            This action is permanent and can't be undone.
+          </q-card-section>
+
+          <q-card-actions align="right">
+            <q-btn
+              flat
+              label="Cancel"
+              v-close-popup
+            ></q-btn>
+            <q-btn
+              flat
+              label="Delete"
+              color="negative"
+              v-close-popup
+              @click="remove(path + '/' + itemToDelete.name, !!itemToDelete.type)"
             ></q-btn>
           </q-card-actions>
         </q-card>
@@ -272,26 +295,9 @@
 
 <script>
 import { defineComponent, ref } from 'vue'
-import { exportFile, useQuasar } from 'quasar'
+import { exportFile } from 'quasar'
 import ProgressBar from 'components/ProgressBar.vue'
-import asyncSleep from 'simple-async-sleep'
-const flipperIcons = {
-  'archive:new': 'img:icons/flipper/action-new.svg',
-  'archive:remove': 'img:icons/flipper/action-remove.svg',
-  'archive:rename': 'img:icons/flipper/action-rename.svg',
-  'archive:save': 'img:icons/flipper/action-save.svg',
-  'archive:sdcard': 'img:icons/flipper/location-sdcard.svg',
-  'archive:internal': 'img:icons/flipper/location-internal.svg',
-  'archive:file': 'img:icons/flipper/file.svg',
-  'archive:folder': 'img:icons/flipper/folder.svg',
-  'archive:badusb': 'img:icons/flipper/badusb.svg',
-  'archive:ibutton': 'img:icons/flipper/ibutton.svg',
-  'archive:infrared': 'img:icons/flipper/infrared.svg',
-  'archive:nfc': 'img:icons/flipper/nfc.svg',
-  'archive:rfid': 'img:icons/flipper/rfid.svg',
-  'archive:subghz': 'img:icons/flipper/subghz.svg',
-  'archive:u2f': 'img:icons/flipper/u2f.svg'
-}
+// import asyncSleep from 'simple-async-sleep'
 
 export default defineComponent({
   name: 'PageArchive',
@@ -307,15 +313,9 @@ export default defineComponent({
   },
 
   setup () {
-    const $q = useQuasar()
-
-    $q.iconMapFn = (iconName) => {
-      const icon = flipperIcons[iconName]
-      if (icon !== void 0) {
-        return { icon: icon }
-      }
-    }
     return {
+      componentName: 'Archive',
+
       path: ref('/'),
       dir: ref([]),
       flags: ref({
@@ -325,7 +325,8 @@ export default defineComponent({
         uploadFolderPopup: false,
         renamePopup: false,
         mkdirPopup: false,
-        blockingOperationPopup: false
+        blockingOperationPopup: false,
+        deletePopup: false
       }),
       uploadedFiles: ref(null),
       editorText: ref(''),
@@ -333,7 +334,8 @@ export default defineComponent({
       file: ref({
         name: '',
         progress: 0
-      })
+      }),
+      itemToDelete: ref(null)
     }
   },
 
@@ -348,70 +350,54 @@ export default defineComponent({
   methods: {
     async startRpc () {
       this.flags.rpcToggling = true
-      const ping = await this.flipper.commands.startRpcSession(this.flipper)
-      if (!ping.resolved || ping.error) {
-        this.$emit('showNotif', {
-          message: 'Unable to start RPC session. Reload the page or reconnect Flipper manually.',
-          color: 'negative',
-          reloadBtn: true
+      await this.flipper.startRPCSession()
+        .catch(error => {
+          console.error(error)
+          this.$emit('log', {
+            level: 'error',
+            message: `${this.componentName}: Error while starting RPC: ${error.toString()}`
+          })
         })
-        this.$emit('log', {
-          level: 'error',
-          message: 'Archive: Couldn\'t start rpc session'
-        })
-        throw new Error('Couldn\'t start rpc session')
-      }
       this.flags.rpcActive = true
-      this.flags.rpcToggling = false
       this.$emit('setRpcStatus', true)
+      this.flags.rpcToggling = false
       this.$emit('log', {
         level: 'info',
-        message: 'Archive: RPC started'
+        message: `${this.componentName}: RPC started`
       })
     },
+
     async stopRpc () {
       this.flags.rpcToggling = true
-      await this.flipper.commands.stopRpcSession()
+      await this.flipper.setReadingMode('text', 'promptBreak')
       this.flags.rpcActive = false
-      this.flags.rpcToggling = false
       this.$emit('setRpcStatus', false)
+      this.flags.rpcToggling = false
       this.$emit('log', {
         level: 'info',
-        message: 'Archive: RPC stopped'
+        message: `${this.componentName}: RPC stopped`
       })
-    },
-    async restartRpc (force) {
-      if (this.connected && (this.rpcActive || force)) {
-        this.flags.restarting = true
-        await this.flipper.closeReader()
-        await asyncSleep(300)
-        await this.flipper.disconnect()
-        await asyncSleep(300)
-        await this.flipper.connect()
-        await this.startRpc()
-      }
     },
 
     async list () {
-      let res = await this.flipper.commands.storage.list(this.path)
-        .catch(error => this.rpcErrorHandler(error, 'storage.list'))
+      const list = await this.flipper.RPC('storageList', { path: this.path })
+        .catch(error => this.rpcErrorHandler(error, 'storageList'))
         .finally(() => {
           this.$emit('log', {
             level: 'debug',
-            message: 'Archive: storage.list: ' + this.path
+            message: `${this.componentName}: storageList: ${this.path}`
           })
         })
-      if (res.length === 0) {
-        this.dir = res
+      if (list.length === 0) {
+        this.dir = []
         return
       }
-      if (res === 'empty response' || res[0] === undefined) {
-        return setTimeout(this.list, 300)
-      }
+
       if (this.path === '/') {
-        res = res.filter(e => e.name !== 'any')
+        this.dir = list.filter(e => e.name !== 'any')
+      } else {
+        this.dir = list
       }
-      this.dir = res.sort((a, b) => { return (b.type || 0) - a.type })
     },
 
     async read (path, preventDownload) {
@@ -419,19 +405,16 @@ export default defineComponent({
       this.file.name = path.slice(path.lastIndexOf('/') + 1)
       const file = this.dir.find(e => e.name === this.file.name && !e.type)
       const total = file.size
-      let maxChunks = 0
       const unbind = this.flipper.emitter.on('storageReadRequest/progress', chunks => {
-        if (maxChunks < chunks) {
-          maxChunks = chunks
-          this.file.progress = Math.min(maxChunks * 512, total) / total
-        }
+        this.file.progress = Math.min(chunks * 512, total) / total
       })
-      const res = await this.flipper.commands.storage.read(path)
-        .catch(error => this.rpcErrorHandler(error, 'storage.read'))
+
+      const res = await this.flipper.RPC('storageRead', { path })
+        .catch(error => this.rpcErrorHandler(error, 'storageRead'))
         .finally(() => {
           this.$emit('log', {
             level: 'debug',
-            message: 'Archive: storage.read: ' + path
+            message: `${this.componentName}: storageRead: ${path}`
           })
         })
       const s = path.split('/')
@@ -446,36 +429,36 @@ export default defineComponent({
     },
 
     async remove (path, isRecursive) {
-      await this.flipper.commands.storage.remove(path, isRecursive)
-        .catch(error => this.rpcErrorHandler(error, 'storage.remove'))
+      await this.flipper.RPC('storageRemove', { path, recursive: isRecursive })
+        .catch(error => this.rpcErrorHandler(error, 'storageRemove'))
         .finally(() => {
           this.$emit('log', {
             level: 'debug',
-            message: `Archive: storage.remove: ${path}, recursive: ${isRecursive}`
+            message: `${this.componentName}: storageRemove: ${path}, recursive: ${isRecursive}`
           })
         })
       this.list()
     },
 
     async rename (path, oldName, newName) {
-      await this.flipper.commands.storage.rename(path, oldName, newName)
-        .catch(error => this.rpcErrorHandler(error, 'storage.rename'))
+      await this.flipper.RPC('storageRename', { oldPath: path + '/' + oldName, newPath: path + '/' + newName })
+        .catch(error => this.rpcErrorHandler(error, 'storageRename'))
         .finally(() => {
           this.$emit('log', {
             level: 'debug',
-            message: `Archive: storage.rename: ${path}, old name: ${oldName}, new name: ${newName}`
+            message: `${this.componentName}: storageRename: ${path}, old name: ${oldName}, new name: ${newName}`
           })
         })
       this.list()
     },
 
     async mkdir (path) {
-      await this.flipper.commands.storage.mkdir(path)
-        .catch(error => this.rpcErrorHandler(error, 'storage.mkdir'))
+      await this.flipper.RPC('storageMkdir', { path })
+        .catch(error => this.rpcErrorHandler(error, 'storageMkdir'))
         .finally(() => {
           this.$emit('log', {
             level: 'debug',
-            message: 'Archive: storage.mkdir: ' + path
+            message: `${this.componentName}: storageMkdir: ${path}`
           })
         })
       this.list()
@@ -495,25 +478,23 @@ export default defineComponent({
           path.pop()
           while (path.length > 0) {
             dir += '/' + path.shift()
-            await this.flipper.commands.storage.stat(dir).catch(async e => {
-              if (e === 'ERROR_STORAGE_NOT_EXIST') {
-                await this.flipper.commands.storage.mkdir(dir)
-              } else {
-                throw e
-              }
-            })
+            const stat = await this.flipper.RPC('storageStat', { path: dir })
+            if (!stat) {
+              await this.flipper.RPC('storageMkdir', { path: dir })
+            }
           }
         }
 
         const unbind = this.flipper.emitter.on('storageWriteRequest/progress', e => {
           this.file.progress = e.progress / e.total
         })
-        await this.flipper.commands.storage.write(dir + '/' + file.name, await file.arrayBuffer())
-          .catch(error => this.rpcErrorHandler(error, 'storage.write'))
+
+        await this.flipper.RPC('storageWrite', { path: dir + '/' + file.name, buffer: await file.arrayBuffer() })
+          .catch(error => this.rpcErrorHandler(error, 'storageWrite'))
           .finally(() => {
             this.$emit('log', {
               level: 'debug',
-              message: 'Archive: storage.write: ' + this.path + '/' + file.name
+              message: `${this.componentName}: storageWrite: ${this.path}/${file.name}`
             })
           })
         unbind()
@@ -554,25 +535,25 @@ export default defineComponent({
 
     itemIconSwitcher (item) {
       if (this.path === '/' && item.name === 'int') {
-        return 'archive:internal'
+        return 'svguse:common-icons.svg#internal-memory'
       } else if (this.path === '/' && item.name === 'ext') {
-        return 'archive:sdcard'
+        return 'svguse:common-icons.svg#sdcard-memory'
       } else if (item.type === 1) {
         return 'mdi-folder-outline'
       } else if (item.name.endsWith('.badusb')) {
-        return 'archive:badusb'
+        return 'svguse:file-types.svg#badusb'
       } else if (item.name.endsWith('.ibtn')) {
-        return 'archive:ibutton'
+        return 'svguse:file-types.svg#ibutton'
       } else if (item.name.endsWith('.ir')) {
-        return 'archive:infrared'
+        return 'svguse:file-types.svg#infrared'
       } else if (item.name.endsWith('.nfc')) {
-        return 'archive:nfc'
+        return 'svguse:file-types.svg#nfc'
       } else if (item.name.endsWith('.rfid')) {
-        return 'archive:rfid'
+        return 'svguse:file-types.svg#rfid'
       } else if (item.name.endsWith('.sub')) {
-        return 'archive:subghz'
+        return 'svguse:file-types.svg#subghz'
       } else if (item.name.endsWith('.u2f')) {
-        return 'archive:u2f'
+        return 'svguse:file-types.svg#u2f'
       } else {
         return 'mdi-file-outline'
       }
@@ -586,18 +567,13 @@ export default defineComponent({
       })
       this.$emit('log', {
         level: 'error',
-        message: `Archive: RPC error in command '${command}': ${error}`
+        message: `${this.componentName}: RPC error in command '${command}': ${error}`
       })
     },
 
     async start () {
       this.flags.rpcActive = this.rpcActive
       if (!this.rpcActive) {
-        setTimeout(() => {
-          if (!this.rpcActive) {
-            return this.restartRpc(true)
-          }
-        }, 1000)
         await this.startRpc()
       }
       await this.list()

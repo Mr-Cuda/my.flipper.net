@@ -1,5 +1,5 @@
 <template>
-  <q-page class="column items-center bg-black q-pl-sm">
+  <q-page class="column items-center bg-black q-pl-sm full-width">
     <div
       v-if="!connected"
       class="column flex-center q-my-xl"
@@ -13,22 +13,38 @@
     </div>
     <div v-if="connected && !flags.rpcActive" class="full-width" style="height: calc(100vh - 50px)">
       <div id="terminal-container" class="fit bg-black"></div>
+
       <q-btn
-        v-if="flags.sharingEnabled"
-        @click="flags.sharePopup = true"
-        outline
-        color="white"
+        color="black"
+        icon="tune"
         class="absolute-top-right q-ma-sm z-top shadow-2"
-        style="margin-right: 25px"
       >
-        {{ flags.serverActive ? 'Session live' : 'Share session' }}
-        <q-badge
-          v-if="flags.serverActive"
-          :label="clientsCount > 0 ? clientsCount : ''"
-          rounded
-          color="green"
-          class="q-ml-md"
-        />
+        <q-menu dark :offset="[0, 10]">
+          <q-list dark bordered separator style="min-width: 100px; border-width: 2px;">
+            <q-item v-if="flags.foundDumpOnStartup" clickable v-close-popup @click="terminal.write(dump)">
+              <q-item-section avatar><q-icon name="mdi-history" /></q-item-section>
+              <q-item-section>Restore history</q-item-section>
+            </q-item>
+            <q-item clickable v-close-popup @click="downloadDump">
+              <q-item-section avatar><q-icon name="mdi-download" /></q-item-section>
+              <q-item-section>Download history</q-item-section>
+            </q-item>
+            <q-item clickable v-close-popup @click="clearDump" class="text-negative">
+              <q-item-section avatar><q-icon name="mdi-delete" /></q-item-section>
+              <q-item-section>Clear history</q-item-section>
+            </q-item>
+            <q-item class="text-center">
+              <q-item-section class="col-grow">Font size</q-item-section>
+              <q-item-section>
+                <q-btn dense color="black" icon="mdi-minus" @click="fontSize--"/>
+              </q-item-section>
+              <q-item-section>{{ fontSize }}</q-item-section>
+              <q-item-section>
+                <q-btn dense color="black" icon="mdi-plus" @click="fontSize++"/>
+              </q-item-section>
+            </q-item>
+          </q-list>
+        </q-menu>
       </q-btn>
     </div>
     <q-dialog v-model="flags.sharePopup">
@@ -73,7 +89,9 @@ import { defineComponent, ref } from 'vue'
 import { Terminal } from 'xterm'
 import 'xterm/css/xterm.css'
 import { FitAddon } from 'xterm-addon-fit'
+import { SerializeAddon } from 'xterm-addon-serialize'
 import { io } from 'socket.io-client'
+import asyncSleep from 'simple-async-sleep'
 
 export default defineComponent({
   name: 'PageCli',
@@ -87,6 +105,8 @@ export default defineComponent({
 
   setup () {
     return {
+      componentName: 'CLI',
+
       flags: ref({
         rpcActive: false,
         rpcToggling: false,
@@ -94,7 +114,8 @@ export default defineComponent({
         serverToggling: false,
         sharePopup: false,
         allowPeerInput: false,
-        sharingEnabled: false
+        sharingEnabled: false,
+        foundDumpOnStartup: false
       }),
       terminal: ref(undefined),
       readInterval: undefined,
@@ -103,61 +124,99 @@ export default defineComponent({
       socket: ref(null),
       roomName: ref(''),
       clientsCount: ref(0),
-      clientsPollingInterval: ref(null)
+      clientsPollingInterval: ref(null),
+      fontSize: ref(14),
+      serializeAddon: null,
+      dump: ref('')
+    }
+  },
+
+  watch: {
+    async fontSize (newSize, oldInfo) {
+      if (this.terminal) {
+        this.terminal.options.fontSize = Number(newSize)
+        localStorage.setItem('cli-fontSize', newSize)
+      }
     }
   },
 
   methods: {
     init () {
       this.terminal = new Terminal({
-        scrollback: 10_000
+        scrollback: 10_000,
+        fontSize: this.fontSize,
+        allowProposedApi: true
       })
       const fitAddon = new FitAddon()
       this.terminal.loadAddon(fitAddon)
+      this.serializeAddon = new SerializeAddon()
+      this.terminal.loadAddon(this.serializeAddon)
+      if (this.dump) {
+        this.flags.foundDumpOnStartup = true
+      }
       this.terminal.open(document.getElementById('terminal-container'))
       document.querySelector('.xterm').setAttribute('style', 'height:' + getComputedStyle(document.querySelector('.xterm')).height)
       this.terminal.focus()
       fitAddon.fit()
 
-      this.write('\x01')
-      this.read()
+      this.write('\r\n\x01\r\n')
+      // this.read()
 
+      let dumpTimeout
       this.terminal.onData(async data => {
+        if (!dumpTimeout) {
+          clearTimeout(dumpTimeout)
+        }
+        dumpTimeout = setTimeout(() => {
+          this.dump = localStorage.getItem('cli-dump')
+        }, 500)
         this.write(data)
       })
     },
 
     write (data) {
-      this.flipper.write('cli', data)
+      this.flipper.write(data)
     },
 
-    read () {
-      this.flipper.read('cli')
+    downloadDump () {
+      const text = this.serializeAddon.serialize()
+      const dl = document.createElement('a')
+      dl.setAttribute('download', 'cli-dump.txt')
+      dl.setAttribute('href', 'data:text/plain,' + text)
+      dl.style.visibility = 'hidden'
+      document.body.append(dl)
+      dl.click()
+      dl.remove()
+    },
+
+    clearDump () {
+      this.dump = ''
+      localStorage.setItem('cli-dump', '')
     },
 
     async stopRpc () {
       this.flags.rpcToggling = true
-      await this.flipper.commands.stopRpcSession()
+      await this.flipper.setReadingMode('text', 'promptBreak')
       this.flags.rpcActive = false
-      this.flags.rpcToggling = false
       this.$emit('setRpcStatus', false)
+      this.flags.rpcToggling = false
       this.$emit('log', {
         level: 'info',
-        message: 'CLI: RPC stopped'
+        message: `${this.componentName}: RPC stopped`
       })
     },
 
     startServer () {
       this.flags.serverToggling = true
-      this.roomName = this.info.hardware_name
+      this.roomName = this.info.hardware.name
       if (!this.socket) {
-        this.socket = io('ws://my.flipp.dev:3000')
+        this.socket = io('ws://lab.flipper.net:3000')
       }
 
       this.socket.on('connect', () => {
         this.$emit('log', {
           level: 'info',
-          message: `CLI: Connected to cli server. My id: ${this.socket.id}, room name: ${this.roomName}`
+          message: `${this.componentName}: Connected to cli server. My id: ${this.socket.id}, room name: ${this.roomName}`
         })
 
         this.socket.emit('claimRoomName', this.roomName, (res) => {
@@ -168,7 +227,7 @@ export default defineComponent({
             })
             this.$emit('log', {
               level: 'error',
-              message: `CLI: Failed to claim room ${this.roomName}: ${res.error.toString()}`
+              message: `${this.componentName}: Failed to claim room ${this.roomName}: ${res.error.toString()}`
             })
           }
         })
@@ -181,12 +240,12 @@ export default defineComponent({
             })
             this.$emit('log', {
               level: 'error',
-              message: `CLI: Failed to join room ${this.roomName}: ${res.error.toString()}`
+              message: `${this.componentName}: Failed to join room ${this.roomName}: ${res.error.toString()}`
             })
           } else {
             this.$emit('log', {
               level: 'info',
-              message: `CLI: Hosting room ${this.roomName}`
+              message: `${this.componentName}: Hosting room ${this.roomName}`
             })
 
             this.clientsPollingInterval = setInterval(() => {
@@ -212,7 +271,7 @@ export default defineComponent({
         })
         this.$emit('log', {
           level: 'warn',
-          message: 'CLI: Disconnected from cli server'
+          message: `${this.componentName}: Disconnected from CLI server`
         })
         if (this.flags.serverActive !== false) {
           this.stopServer()
@@ -239,7 +298,7 @@ export default defineComponent({
         if (res.error) {
           this.$emit('log', {
             level: 'error',
-            message: `Remote CLI: Failed to broadcast: ${res.error.toString()}`
+            message: `${this.componentName}: Failed to broadcast: ${res.error.toString()}`
           })
           console.error(res.message)
         }
@@ -251,58 +310,31 @@ export default defineComponent({
       if (this.rpcActive) {
         await this.stopRpc()
       }
+      if (window.innerWidth < 381) {
+        this.fontSize = 9
+      } else if (window.innerWidth < 463) {
+        this.fontSize = 11
+      }
+
       setTimeout(this.init, 500)
+      await asyncSleep(1000)
+      await this.flipper.setReadingMode('text')
 
-      let isUnicode = false,
-        unicodeBytesLeft = 0,
-        unicodeBuffer = []
-
-      this.unbind = this.flipper.emitter.on('cli output', data => {
-        if (data.byteLength === 1) {
-          const byte = data[0]
-          if (!isUnicode && byte >> 7 === 1) {
-            isUnicode = true
-            data = undefined
-            unicodeBuffer.push(byte)
-            for (let i = 6; i >= 4; i--) {
-              if ((byte >> i) % 2 === 1) {
-                unicodeBytesLeft++
-              } else {
-                break
-              }
-            }
-          } else {
-            if (unicodeBytesLeft > 0 && byte >> 6 === 2) {
-              unicodeBuffer.push(byte)
-              unicodeBytesLeft--
-              if (unicodeBytesLeft === 0) {
-                data = new Uint8Array(unicodeBuffer)
-                isUnicode = false
-                unicodeBuffer = []
-              } else {
-                data = undefined
-              }
-            } else {
-              isUnicode = false
-              unicodeBytesLeft = 0
-              unicodeBuffer = []
-            }
-          }
-        }
-        if (data) {
-          const text = new TextDecoder().decode(data).replaceAll('\x7F', '')
-          this.terminal.write(text)
-          if (this.flags.serverActive) {
-            this.broadcast(text)
-          }
-        }
+      this.unbind = this.flipper.emitter.on('cli/output', data => {
+        this.terminal.write(data)
       })
     }
   },
 
   mounted () {
+    this.dump = localStorage.getItem('cli-dump')
     if (this.connected) {
       setTimeout(this.start, 500)
+    }
+
+    const savedFontSize = localStorage.getItem('cli-fontSize')
+    if (savedFontSize) {
+      this.fontSize = Number(savedFontSize)
     }
 
     if (new URLSearchParams(location.search).get('sharing') === 'true') {
@@ -311,6 +343,7 @@ export default defineComponent({
   },
 
   async beforeUnmount () {
+    localStorage.setItem('cli-dump', this.serializeAddon.serialize())
     this.unbind()
     if (this.flags.serverActive) {
       this.stopServer()

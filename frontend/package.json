@@ -1,24 +1,29 @@
 {
-  "name": "my.flipper.net",
+  "name": "lab.flipper.net",
   "version": "0.0.1",
   "description": "Web platform for your Flipper",
-  "productName": "my.flipper.net",
+  "productName": "lab.flipper.net",
   "author": "Slipn3r <61992469+Slipn3r@users.noreply.github.com>",
   "private": true,
   "scripts": {
     "lint": "eslint --ext .js,.vue ./",
+    "lint-fix": "eslint --fix --ext .js,.vue ./",
+    "format": "prettier --write \"**/*.{js,ts,vue,scss,sass,css,html,md,json}\" --ignore-path .eslintignore --config .prettierrc.json && npm run lint-fix",
     "dev/web": "quasar dev",
     "dev/electron": "quasar dev -m electron",
-    "build/web": "quasar build",
+    "build": "PRODUCTION=TRUE quasar build -m spa",
+    "build/dev": "DEV=TRUE quasar build -m spa",
     "build/electron": "quasar build -m electron",
-    "compile-protofiles": "npx pbjs -t static-module -w es6 --no-comments --lint \"eslint-disable block-scoped-var, id-length, no-control-regex, no-magic-numbers, no-prototype-builtins, no-redeclare, no-shadow, no-var, sort-vars, camelcase, default-case-last, no-mixed-operators\" -o src/flipper/protobuf/proto-compiled.js ./flipperzero-protobuf/*.proto && eslint --fix src/flipper/protobuf/proto-compiled.js"
+    "compile-protofiles": "npx pbjs -t static-module -w es6 --no-comments --lint \"eslint-disable block-scoped-var, id-length, no-control-regex, no-magic-numbers, no-prototype-builtins, no-redeclare, no-shadow, no-var, sort-vars, camelcase, default-case-last, no-mixed-operators\" -o src/flipper/protobuf/proto-compiled.js ./flipperzero-protobuf/*.proto && eslint --fix src/flipper-js/protobuf/protobufCompiled.js"
   },
   "dependencies": {
     "@quasar/extras": "^1.14.0",
     "core-js": "^3.6.5",
+    "d3": "^7.8.5",
     "loglevel": "^1.8.0",
     "nanoevents": "^6.0.2",
     "pako": "^2.0.4",
+    "prettier": "^3.0.3",
     "protobufjs": "~6.11.2",
     "quasar": "^2.7.1",
     "semver": "^7.3.6",
@@ -28,14 +33,14 @@
     "socket.io-client": "^4.5.1",
     "vue": "^3.0.0",
     "vue-router": "^4.0.0",
-    "xterm": "^4.18.0",
-    "xterm-addon-fit": "^0.5.0"
+    "xterm": "^5.0.0",
+    "xterm-addon-fit": "^0.6.0",
+    "xterm-addon-serialize": "^0.8.0"
   },
   "devDependencies": {
     "@babel/eslint-parser": "^7.13.14",
     "@quasar/app-webpack": "^3.5.3",
-    "electron": "^17.0.1",
-    "electron-packager": "^15.4.0",
+    "@quasar/quasar-app-extension-qmarkdown": "^2.0.0-beta.10",
     "eslint": "^7.14.0",
     "eslint-config-standard": "^16.0.2",
     "eslint-plugin-import": "^2.19.1",

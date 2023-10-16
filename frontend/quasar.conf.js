@@ -9,6 +9,7 @@
 /* eslint-env node */
 const ESLintPlugin = require('eslint-webpack-plugin')
 const { configure } = require('quasar/wrappers')
+const path = require('node:path')
 
 module.exports = configure(function (ctx) {
   return {
@@ -48,6 +49,12 @@ module.exports = configure(function (ctx) {
     build: {
       vueRouterMode: 'history', // available values: 'hash', 'history'
 
+      env: {
+        ARCHIVARIUS_API_ENDPOINT: process.env.PRODUCTION
+          ? 'https://catalog.flipperzero.one/api/v0'
+          : 'https://catalog.flipp.dev/api/v0',
+        PRODUCTION: process.env.PRODUCTION
+      },
       // transpile: false,
       // publicPath: '/',
 
@@ -69,7 +76,11 @@ module.exports = configure(function (ctx) {
       // "chain" is a webpack-chain object https://github.com/neutrinojs/webpack-chain
       chainWebpack (chain) {
         chain.plugin('eslint-webpack-plugin')
-          .use(ESLintPlugin, [{ extensions: ['js', 'vue'] }])
+          .use(ESLintPlugin, [{ extensions: ['js', 'vue'] }]),
+        chain.resolve.alias
+          .set('util', path.resolve(__dirname, './src/util'))
+        chain.resolve.alias
+          .set('composables', path.resolve(__dirname, './src/composables'))
       }
     },
 
@@ -143,8 +154,8 @@ module.exports = configure(function (ctx) {
       },
 
       manifest: {
-        name: 'my.flipper.net',
-        short_name: 'my.flipper.net',
+        name: 'lab.flipper.net',
+        short_name: 'lab.flipper.net',
         description: 'Web platform for your Flipper',
         display: 'standalone',
         orientation: 'portrait',
@@ -210,7 +221,7 @@ module.exports = configure(function (ctx) {
       builder: {
         // https://www.electron.build/configuration/configuration
 
-        appId: 'my.flipper.net'
+        appId: 'lab.flipper.net'
       },
 
       // "chain" is a webpack-chain object https://github.com/neutrinojs/webpack-chain
